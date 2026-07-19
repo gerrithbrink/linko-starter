@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -47,7 +47,7 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	st, err := store.New(dataDir, logger)
 
 	if err != nil {
-		logger.Printf("failed to create store: %v\n", err)
+		logger.Info(fmt.Sprintf("failed to create store: %v\n", err))
 		return 1
 	}
 	s := newServer(*st, httpPort, cancel, logger)
@@ -55,33 +55,34 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	go func() {
 		serverErr = s.start()
 	}()
-	logger.Printf("Linko is running on http://localhost:%d", httpPort)
+	logger.Info(fmt.Sprintf("Linko is running on http://localhost:%d", httpPort))
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := s.shutdown(shutdownCtx); err != nil {
-		logger.Printf("failed to shutdown server: %v\n", err)
+		logger.Info(fmt.Sprintf("failed to shutdown server: %v\n", err))
 		return 1
 	}
 	if serverErr != nil {
-		logger.Printf("server error: %v\n", serverErr)
+		logger.Info(fmt.Sprintf("server error: %v\n", serverErr))
 		return 1
 	}
 	return 0
 }
 
-func initializeLogger() (*log.Logger, closeFunc, error) {
+func initializeLogger() (*slog.Logger, closeFunc, error) {
 	logFile, exists := os.LookupEnv("LINKO_LOG_FILE")
 	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	bufferedFile := bufio.NewWriterSize(file, 8192)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open log file: %w", err)
 	}
-	var logger *log.Logger
+	var logger *slog.Logger
 	if exists {
 		multiWriter := io.MultiWriter(os.Stderr, bufferedFile)
-		logger = log.New(multiWriter, "", log.LstdFlags)
+		handler := slog.NewTextHandler(multiWriter, nil)
+		logger = slog.New(handler)
 		closeFunc := func() error {
 			err := bufferedFile.Flush()
 			if err != nil {
@@ -95,7 +96,8 @@ func initializeLogger() (*log.Logger, closeFunc, error) {
 		}
 		return logger, closeFunc, nil
 	} else {
-		logger = log.New(os.Stderr, "", log.LstdFlags)
+		handler := slog.NewTextHandler(os.Stderr, nil)
+		logger = slog.New(handler)
 		closeFunc := func() error {
 			return nil
 		}
