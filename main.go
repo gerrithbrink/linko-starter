@@ -34,9 +34,11 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 
 	logger, closeFunc, err := initializeLogger()
 	defer func() {
-		err := closeFunc()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to close log file: %v\n", err)
+		if closeFunc != nil {
+			err := closeFunc()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to close log file: %v\n", err)
+			}
 		}
 	}()
 	if err != nil {
@@ -73,34 +75,30 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 
 func initializeLogger() (*slog.Logger, closeFunc, error) {
 	logFile, exists := os.LookupEnv("LINKO_LOG_FILE")
+	if !exists || logFile == "" {
+		handler := slog.NewTextHandler(os.Stderr, nil)
+		logger := slog.New(handler)
+		closeFunc := func() error {
+			return nil
+		}
+		return logger, closeFunc, nil
+	}
+
 	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	bufferedFile := bufio.NewWriterSize(file, 8192)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open log file: %w", err)
 	}
-	var logger *slog.Logger
-	if exists {
-		multiWriter := io.MultiWriter(os.Stderr, bufferedFile)
-		handler := slog.NewTextHandler(multiWriter, nil)
-		logger = slog.New(handler)
-		closeFunc := func() error {
-			err := bufferedFile.Flush()
-			if err != nil {
-				return err
-			}
-			err = file.Close()
-			if err != nil {
-				return err
-			}
-			return nil
+	bufferedFile := bufio.NewWriterSize(file, 8192)
+	multiWriter := io.MultiWriter(os.Stderr, bufferedFile)
+	handler := slog.NewTextHandler(multiWriter, nil)
+	logger := slog.New(handler)
+	closeFunc := func() error {
+		err := bufferedFile.Flush()
+		if err != nil {
+			file.Close()
+			return err
 		}
-		return logger, closeFunc, nil
-	} else {
-		handler := slog.NewTextHandler(os.Stderr, nil)
-		logger = slog.New(handler)
-		closeFunc := func() error {
-			return nil
-		}
-		return logger, closeFunc, nil
+		return file.Close()
 	}
+	return logger, closeFunc, nil
 }
