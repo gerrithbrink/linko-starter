@@ -37,7 +37,8 @@ func New(dir string, logger *slog.Logger) (*Store, error) {
 		return nil, err
 	}
 	return &Store{
-		dir: dir,
+		dir:    dir,
+		logger: logger,
 	}, nil
 }
 
@@ -108,7 +109,7 @@ func (s *Store) Lookup(_ context.Context, short string) (string, error) {
 		return "", ErrNotFound
 	}
 	if err != nil {
-		fmt.Printf("failed to read %s: %v\n", shortcodeFilepath, err)
+		s.logger.Error("failed to read shortcode file", "path", shortcodeFilepath, "error", err)
 		return "", err
 	}
 	return string(data), nil
