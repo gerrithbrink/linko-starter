@@ -97,6 +97,7 @@ const logContextKey contextKey = "log_context"
 
 type LogContext struct {
 	Username string
+	Error    error
 }
 
 func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
